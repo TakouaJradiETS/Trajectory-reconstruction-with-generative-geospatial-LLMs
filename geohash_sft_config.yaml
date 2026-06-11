@@ -1,0 +1,93 @@
+input_file: selected_1000_clean_trajectories.parquet
+splits_dir: processed      # trajectory_splits.csv and sog_quantile_thresholds.json always here
+seed: 42
+strict_1000: true
+
+geohash_precision: 7
+gap_sizes: [5, 10, 15, 30, 45, 60]
+prefix_steps: 60
+suffix_steps: 60
+# 3 windows per trajectory (left/center/right) triples training data to 7200 examples.
+# Set to 1 to reproduce the original single-window setup.
+num_windows_per_trajectory: 3
+
+split:
+  train_size: 800
+  val_size: 100
+  test_size: 100
+
+sog:
+  stopped_threshold: 0.5
+  low_threshold: 5
+  moderate_threshold: 12
+  high_threshold: 20
+
+cog:
+  num_directions: 8   # legacy field; num_directions is now driven by cog_variant
+
+# ── Tokenization variant ──────────────────────────────────────────────────────
+# sog_variant: S0 | S1 | S2 | S3
+#   S0 = old 5-bin baseline (STOP/LOW/MOD/HIGH/VHIGH)
+#   S1 = 10-bin fixed domain-aware (<SOG_00_STOP> … <SOG_09_VFAST>)
+#   S2 = 16-bin hybrid: 4 fixed + 12 train-quantile (<SOG_04_Q01>…<SOG_15_Q12>)
+#   S3 = 20-bin hybrid: 4 fixed + 16 train-quantile (<SOG_04_Q01>…<SOG_19_Q16>)
+# cog_variant: C0 | C1 | C2 | C3
+#   C0 = old 8-direction (N/NE/E/SE/S/SW/W/NW)
+#   C1 = 16-point compass (N/NNE/NE/ENE/…/NNW)
+#   C2 = 24-bin circular 15° bins (<COG_000>…<COG_345>)   ← recommended
+#   C3 = 36-bin circular 10° bins (<COG_000>…<COG_350>)
+sog_variant: S1
+cog_variant: C2
+
+# Path to train-fitted quantile thresholds (only needed for S2/S3)
+sog_quantile_thresholds_path: processed/sog_quantile_thresholds.json
+
+# Output directories — variant-specific so baseline in processed/ is untouched
+output_dir: processed/S1_C2
+model_output_dir: outputs/S1_C2
+eval_output_dir:  outputs/S1_C2/evaluation
+
+model:
+  model_name: Qwen/Qwen2.5-3B-Instruct
+  # Compact format keeps prompts within ~3000 tokens; 5120 gives headroom.
+  max_seq_length: 5120
+  use_lora: true
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.10
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+training:
+  num_train_epochs: 5
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 0.00005
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  logging_steps: 10
+  save_steps: 100
+  eval_steps: 100
+  save_strategy: steps
+  eval_strategy: steps
+  load_best_model_at_end: true
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+  early_stopping_patience: 2
+  overwrite_output_dir: true
+
+generation:
+  # gap_60 needs ~270 BPE tokens (60 geohashes × ~4.5 tok each); 384 gives safe headroom.
+  max_new_tokens: 384
+  temperature: 0.0
+  do_sample: false
+  num_beams: 1
